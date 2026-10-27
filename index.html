@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema de Reconhecimento Facial</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts & FontAwesome Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- face-api.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+
+  <style>
+    body { font-family: 'Space Grotesk', sans-serif; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .scan-line {
+      background: linear-gradient(to bottom, transparent, rgba(6, 182, 212, 0.4), rgba(6, 182, 212, 0.8), transparent);
+      animation: scan 2.5s linear infinite;
+    }
+    @keyframes scan {
+      0% { top: 0%; opacity: 0; }
+      15% { opacity: 1; }
+      85% { opacity: 1; }
+      100% { top: 100%; opacity: 0; }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-950 text-slate-100">
+
+  <!-- Cabeçalho -->
+  <header class="border-b border-slate-800 bg-slate-900/60 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 text-slate-950 font-bold text-lg">
+          <i class="fa-solid fa-face-smile"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-cyan-400 via-teal-300 to-indigo-400 bg-clip-text text-transparent">
+            FACE RECOGNITION <span class="text-xs px-2 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/30 text-cyan-400 mono">v1.0</span>
+          </h1>
+          <p class="text-xs text-slate-400">Reconhecimento Facial em Tempo Real no Navegador</p>
+        </div>
+      </div>
+
+      <!-- Badge de Status -->
+      <div id="statusBadge" class="flex items-center space-x-2 px-3 py-1.5 rounded-full bg-slate-800/80 border border-slate-700 text-xs text-slate-300">
+        <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" id="statusDot"></span>
+        <span id="statusText" class="mono">Carregando IA...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Conteúdo Principal -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- Câmera & Visualização -->
+    <div class="lg:col-span-8 flex flex-col gap-4">
+
+      <!-- Contêiner do Vídeo -->
+      <div class="relative w-full bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl min-h-[350px] sm:min-h-[480px] flex items-center justify-center">
+
+        <div class="relative w-full h-full flex items-center justify-center overflow-hidden">
+          <video id="webcam" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100 hidden"></video>
+          <canvas id="overlay" class="absolute inset-0 w-full h-full pointer-events-none transform -scale-x-100 z-10"></canvas>
+
+          <!-- Linha de escaneamento visual -->
+          <div id="scanLine" class="hidden absolute left-0 right-0 h-16 scan-line z-20 pointer-events-none"></div>
+
+          <!-- Mensagem quando câmera está desligada -->
+          <div id="videoPlaceholder" class="flex flex-col items-center justify-center p-8 text-center space-y-4">
+            <div class="w-20 h-20 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-slate-500 text-3xl">
+              <i class="fa-solid fa-camera"></i>
+            </div>
+            <div>
+              <h3 class="text-lg font-medium text-slate-200">Câmera Desconectada</h3>
+              <p class="text-sm text-slate-400 max-w-sm mt-1">Aguarde o carregamento dos modelos para ligar a câmera.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Botões de Controle -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button id="btnToggleCamera" disabled class="w-full py-3.5 px-4 rounded-xl font-semibold text-sm transition flex items-center justify-center space-x-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-lg shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed">
+          <i class="fa-solid fa-video"></i>
+          <span>Ligar Câmera</span>
+        </button>
+
+        <button id="btnRefresh" class="w-full py-3.5 px-4 rounded-xl font-medium text-sm bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 transition flex items-center justify-center space-x-2">
+          <i class="fa-solid fa-rotate-right"></i>
+          <span>Reiniciar Scanner</span>
+        </button>
+      </div>
+
+      <!-- Card do Resultado de Identificação -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+        <div class="flex items-center space-x-4">
+          <div id="resultAvatar" class="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl text-slate-400">
+            <i class="fa-solid fa-user"></i>
+          </div>
+          <div>
+            <span class="text-xs mono text-slate-400 uppercase tracking-wider">Identificação do Rosto</span>
+            <h4 id="resultName" class="text-lg font-bold text-slate-100">Nenhum rosto na tela</h4>
+          </div>
+        </div>
+        <div class="text-right mono">
+          <span class="text-xs text-slate-400">Precisão</span>
+          <div id="resultConfidence" class="text-lg font-bold text-cyan-400">--%</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Painel Lateral: Cadastro de Nomes/Biometria -->
+    <div class="lg:col-span-4 flex flex-col gap-6">
+
+      <!-- Formulário para Cadastrar Rosto -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col space-y-4">
+        <div class="flex items-center space-x-2 text-cyan-400">
+          <i class="fa-solid fa-user-plus"></i>
+          <h2 class="font-bold text-slate-100">Cadastrar Rosto</h2>
+        </div>
+        <p class="text-xs text-slate-400">
+          Ligue a câmera, olhe de frente, digite seu nome e clique em capturar para salvar sua biometria.
+        </p>
+
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs mono text-slate-400 mb-1">SEU NOME</label>
+            <input type="text" id="inputPersonName" placeholder="Ex: Lucas Gabriel" class="w-full bg-slate-950 border border-slate-800 focus:border-cyan-500 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none transition">
+          </div>
+
+          <button id="btnRegisterFace" disabled class="w-full py-3 px-4 rounded-xl font-semibold text-sm bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 shadow-lg shadow-emerald-500/10 transition flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed">
+            <i class="fa-solid fa-camera"></i>
+            <span>Capturar & Salvar Rosto</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Lista de Pessoas Cadastradas -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex-1 flex flex-col min-h-[250px]">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center space-x-2 text-cyan-400">
+            <i class="fa-solid fa-users"></i>
+            <h2 class="font-bold text-slate-100">Cadastrados</h2>
+          </div>
+          <span id="registeredCount" class="text-xs mono bg-slate-800 text-cyan-400 px-2 py-0.5 rounded-full border border-slate-700">0</span>
+        </div>
+
+        <div id="registeredList" class="flex-1 overflow-y-auto space-y-2.5 max-h-[280px] pr-1">
+          <div class="text-center text-xs text-slate-500 py-8">
+            Nenhuma pessoa cadastrada ainda.
+          </div>
+        </div>
+
+        <button id="btnClearAll" class="mt-4 text-xs text-rose-400 hover:text-rose-300 mono transition text-center py-1">
+          <i class="fa-solid fa-trash-can mr-1"></i> Limpar todos os registros
+        </button>
+      </div>
+
+    </div>
+
+  </main>
+
+  <script>
+    // URL base com os arquivos dos modelos de IA do face-api.js via CDN
+    const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/';
+
+    // Elementos da Interface
+    const webcam = document.getElementById('webcam');
+    const overlay = document.getElementById('overlay');
+    const btnToggleCamera = document.getElementById('btnToggleCamera');
+    const btnRegisterFace = document.getElementById('btnRegisterFace');
+    const btnRefresh = document.getElementById('btnRefresh');
+    const btnClearAll = document.getElementById('btnClearAll');
+    const inputPersonName = document.getElementById('inputPersonName');
+    const registeredList = document.getElementById('registeredList');
+    const registeredCount = document.getElementById('registeredCount');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const videoPlaceholder = document.getElementById('videoPlaceholder');
+    const scanLine = document.getElementById('scanLine');
+    const resultName = document.getElementById('resultName');
+    const resultConfidence = document.getElementById('resultConfidence');
+    const resultAvatar = document.getElementById('resultAvatar');
+
+    // Variáveis do Estado
+    let isCameraActive = false;
+    let faceMatcher = null;
+    let registeredProfiles = [];
+    let currentDetection = null;
+    let detectionInterval = null;
+
+    // 1. Carregar Modelos de IA
+    async function loadModels() {
+      try {
+        updateStatus('loading', 'Carregando Modelos de IA...');
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+        ]);
+        updateStatus('ready', 'Pronto para uso');
+        btnToggleCamera.disabled = false;
+      } catch (err) {
+        console.error("Erro ao carregar os modelos:", err);
+        updateStatus('error', 'Erro no carregamento');
+      }
+    }
+
+    // 2. Gerenciar Perfis Salvos (localStorage)
+    function loadSavedProfiles() {
+      const saved = localStorage.getItem('biometrix_profiles');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          registeredProfiles = parsed.map(p => ({
+            name: p.name,
+            descriptors: p.descriptors.map(d => new Float32Array(d))
+          }));
+        } catch (e) {
+          console.error("Erro ao ler dados salvos:", e);
+          registeredProfiles = [];
+        }
+      }
+      updateFaceMatcher();
+      renderProfilesList();
+    }
+
+    function saveProfilesToStorage() {
+      const dataToSave = registeredProfiles.map(p => ({
+        name: p.name,
+        descriptors: p.descriptors.map(d => Array.from(d))
+      }));
+      localStorage.setItem('biometrix_profiles', JSON.stringify(dataToSave));
+    }
+
+    function updateFaceMatcher() {
+      if (registeredProfiles.length > 0) {
+        const labeledDescriptors = registeredProfiles.map(p =>
+          new faceapi.LabeledFaceDescriptors(p.name, p.descriptors)
+        );
+        faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.6);
+      } else {
+        faceMatcher = null;
+      }
+    }
+
+    // 3. Controle da Câmera
+    async function toggleCamera() {
+      if (isCameraActive) {
+        stopCamera();
+      } else {
+        await startCamera();
+      }
+    }
+
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
+        });
+        webcam.srcObject = stream;
+        await webcam.play();
+
+        isCameraActive = true;
+        webcam.classList.remove('hidden');
+        videoPlaceholder.classList.add('hidden');
+        scanLine.classList.remove('hidden');
+
+        btnToggleCamera.innerHTML = `<i class="fa-solid fa-video-slash"></i><span>Desligar Câmera</span>`;
+        btnToggleCamera.classList.replace('bg-cyan-500', 'bg-rose-500');
+        btnToggleCamera.classList.replace('hover:bg-cyan-400', 'hover:bg-rose-400');
+        btnToggleCamera.classList.replace('text-slate-950', 'text-white');
+
+        btnRegisterFace.disabled = false;
+        startDetectionLoop();
+
+      } catch (err) {
+        alert("Não foi possível acessar a webcam: " + err.message);
+      }
+    }
+
+    function stopCamera() {
+      if (webcam.srcObject) {
+        webcam.srcObject.getTracks().forEach(track => track.stop());
+        webcam.srcObject = null;
+      }
+      if (detectionInterval) clearInterval(detectionInterval);
+
+      isCameraActive = false;
+      webcam.classList.add('hidden');
+      videoPlaceholder.classList.remove('hidden');
+      scanLine.classList.add('hidden');
+
+      btnToggleCamera.innerHTML = `<i class="fa-solid fa-video"></i><span>Ligar Câmera</span>`;
+      btnToggleCamera.classList.replace('bg-rose-500', 'bg-cyan-500');
+      btnToggleCamera.classList.replace('hover:bg-rose-400', 'hover:bg-cyan-400');
+      btnToggleCamera.classList.replace('text-white', 'text-slate-950');
+
+      btnRegisterFace.disabled = true;
+
+      const ctx = overlay.getContext('2d');
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+      resetResultCard();
+    }
+
+    // 4. Loop Contínuo de Reconhecimento Facial
+    function startDetectionLoop() {
+      const displaySize = { width: webcam.clientWidth || 640, height: webcam.clientHeight || 480 };
+      faceapi.matchDimensions(overlay, displaySize);
+
+      detectionInterval = setInterval(async () => {
+        if (!isCameraActive) return;
+
+        const detection = await faceapi.detectSingleFace(
+          webcam,
+          new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 })
+        ).withFaceLandmarks().withFaceDescriptor();
+
+        const ctx = overlay.getContext('2d');
+        ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+        if (detection) {
+          currentDetection = detection;
+          const resized = faceapi.resizeResults(detection, displaySize);
+          const box = resized.detection.box;
+
+          let labelText = "Desconhecido";
+          let confidenceText = `${Math.round(detection.detection.score * 100)}%`;
+          let boxColor = "#ef4444"; // Vermelho
+
+          if (faceMatcher) {
+            const match = faceMatcher.findBestMatch(detection.descriptor);
+            if (match.label !== 'unknown') {
+              labelText = match.label;
+              boxColor = "#10b981"; // Verde
+              const precision = Math.round((1 - match.distance) * 100);
+              confidenceText = `${precision}%`;
+            }
+          }
+
+          // Desenha retângulo na face
+          ctx.strokeStyle = boxColor;
+          ctx.lineWidth = 3;
+          ctx.strokeRect(box.x, box.y, box.width, box.height);
+
+          // Rótulo com o Nome
+          ctx.fillStyle = boxColor;
+          ctx.fillRect(box.x, box.y - 28, box.width, 28);
+          ctx.fillStyle = "#020617";
+          ctx.font = "bold 14px 'Space Grotesk', sans-serif";
+          ctx.fillText(labelText.toUpperCase(), box.x + 8, box.y - 8);
+
+          // Pontos Faciais
+          faceapi.draw.drawFaceLandmarks(overlay, resized);
+
+          // Atualiza dados na tela
+          resultName.innerText = labelText;
+          resultName.className = labelText === 'Desconhecido' ? 'text-lg font-bold text-rose-400' : 'text-lg font-bold text-emerald-400';
+          resultConfidence.innerText = confidenceText;
+          resultAvatar.innerHTML = `<i class="fa-solid fa-user-check ${labelText === 'Desconhecido' ? 'text-rose-400' : 'text-emerald-400'}"></i>`;
+
+        } else {
+          currentDetection = null;
+          resetResultCard();
+        }
+      }, 150);
+    }
+
+    // 5. Cadastrar Rosto do Usuário
+    btnRegisterFace.addEventListener('click', () => {
+      const name = inputPersonName.value.trim();
+      if (!name) {
+        alert("Digite o nome da pessoa primeiro!");
+        inputPersonName.focus();
+        return;
+      }
+
+      if (!currentDetection) {
+        alert("Nenhum rosto foi detectado na câmera no momento. Olhe de frente para a tela!");
+        return;
+      }
+
+      let profile = registeredProfiles.find(p => p.name.toLowerCase() === name.toLowerCase());
+
+      if (profile) {
+        profile.descriptors.push(currentDetection.descriptor);
+      } else {
+        registeredProfiles.push({
+          name: name,
+          descriptors: [currentDetection.descriptor]
+        });
+      }
+
+      saveProfilesToStorage();
+      updateFaceMatcher();
+      renderProfilesList();
+
+      inputPersonName.value = "";
+      alert(`Rosto cadastrado com sucesso para "${name}"!`);
+    });
+
+    // 6. Lista de Cadastrados
+    function renderProfilesList() {
+      registeredCount.innerText = registeredProfiles.length;
+
+      if (registeredProfiles.length === 0) {
+        registeredList.innerHTML = `
+          <div class="text-center text-xs text-slate-500 py-8">
+            Nenhuma pessoa cadastrada ainda.
+          </div>
+        `;
+        return;
+      }
+
+      registeredList.innerHTML = registeredProfiles.map((p, idx) => `
+        <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+          <div class="flex items-center space-x-3">
+            <div class="w-8 h-8 rounded-lg bg-cyan-950 border border-cyan-500/30 text-cyan-400 flex items-center justify-center font-bold text-xs">
+              ${p.name.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div class="text-xs font-semibold text-slate-200">${p.name}</div>
+              <div class="text-[10px] mono text-slate-500">${p.descriptors.length} amostra(s) salvas</div>
+            </div>
+          </div>
+          <button onclick="removeProfile(${idx})" class="text-slate-500 hover:text-rose-400 p-1.5 transition">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </div>
+      `).join('');
+    }
+
+    window.removeProfile = function(index) {
+      registeredProfiles.splice(index, 1);
+      saveProfilesToStorage();
+      updateFaceMatcher();
+      renderProfilesList();
+    };
+
+    btnClearAll.addEventListener('click', () => {
+      if (confirm("Deseja apagar todos os cadastros salvos?")) {
+        registeredProfiles = [];
+        saveProfilesToStorage();
+        updateFaceMatcher();
+        renderProfilesList();
+      }
+    });
+
+    function resetResultCard() {
+      resultName.innerText = "Nenhum rosto na tela";
+      resultName.className = "text-lg font-bold text-slate-100";
+      resultConfidence.innerText = "--%";
+      resultAvatar.innerHTML = `<i class="fa-solid fa-user"></i>`;
+    }
+
+    function updateStatus(state, text) {
+      statusText.innerText = text;
+      if (state === 'loading') {
+        statusDot.className = "w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse";
+      } else if (state === 'ready') {
+        statusDot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500";
+      } else {
+        statusDot.className = "w-2.5 h-2.5 rounded-full bg-rose-500";
+      }
+    }
+
+    btnRefresh.addEventListener('click', () => location.reload());
+    btnToggleCamera.addEventListener('click', toggleCamera);
+
+    window.addEventListener('DOMContentLoaded', () => {
+      loadSavedProfiles();
+      loadModels();
+    });
+  </script>
+</body>
+</html>
